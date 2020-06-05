@@ -67,6 +67,69 @@ function gc_assess_arc_enqueue_scripts() {
 }
 add_action( 'wp_enqueue_scripts', 'gc_assess_arc_enqueue_scripts' );
 
+/**
+ * Display current judgment progress
+ */
+function gcaa_display_progress() {
+  if(is_page('competency-assessment-progress')) {
+    global $wpdb;
+    $posts_table = $wpdb->prefix . 'posts';
+    $db = new arc_judg_db;
+    $judgments_table = $db->get_name();
+
+    // get array of competencies
+    $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` LIKE '%-Overall' AND `post_status` = 'publish' AND `post_type` = 'competency' ORDER BY `ID`";
+    $competencies = $wpdb->get_results($sql);
+    // get array of scenario titles
+    $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` NOT LIKE '0-%' AND `post_status` = 'publish' AND `post_type` = 'scenario'";
+    $tasks = $wpdb->get_results($sql);
+
+    // iterate over each task-competency pair, counting the number of responses, coded responses, and reviewed responses for each
+    foreach($competencies as $comp_obj) {
+      // get the actual competency name and number
+      $comp_str = $comp_obj->post_title;
+      $ind = strpos($comp_str,'-Overall');
+      $comp_name = substr($comp_str,0,$ind);
+      $comp_num = substr($comp_name,0,strpos($comp_name,'-'));
+      // print the competency name on its own line
+      echo "<h3>Competency {$comp_name}</h3>" . PHP_EOL;
+
+      foreach($tasks as $task_obj) {
+        // get the task name and number
+        $task_name = $task_obj->post_title;
+        $task_num = substr($task_name,0,strpos($task_name,'-'));
+
+        // look for responses with this task and competency pair
+        $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` LIKE 'c{$comp_num}-t{$task_num}-%' AND `post_status` = 'publish' AND `post_type` = 'response'";
+        $total_responses = count($wpdb->get_results($sql));
+
+        // if there are responses, print the scenario name, find the appropriate counts, and remove the scenario from the array
+        if($total_responses > 0) {
+          // print scenario name on its own line
+          echo "<b>Scenario {$task_name}</b><br />" . PHP_EOL;
+          
+          // get counts
+          $sql = "SELECT DISTINCT `resp_title` FROM `{$judgments_table}` WHERE `resp_title` LIKE 'c{$comp_num}-t{$task_num}-%'";
+          $num_coded_responses = count($wpdb->get_results($sql));
+          $sql .= " AND `judg_type` = 'rev'";
+          $num_reviewed_responses = count($wpdb->get_results($sql));
+
+          // print counts
+          echo "{$total_responses} responses to code.<br />" . PHP_EOL;
+          echo "{$num_coded_responses} coded responses.<br />" . PHP_EOL;
+          echo "{$num_reviewed_responses} reviewed responses.<br /><br />" . PHP_EOL;
+
+          // task 9 is in both competency 1 and 2, so it can't be removed the first time
+          if($task_num != "9" || $comp_num > 1) {
+            unset($tasks[array_search($task_obj,$tasks)]);
+          }
+        }
+      }
+    }
+  }
+}
+add_action('genesis_entry_content','gcaa_display_progress');
+
 
 function gc_assess_arc_enqueue_styles() {
 
