@@ -82,48 +82,59 @@ function gcaa_display_progress() {
     $competencies = $wpdb->get_results($sql);
     // get array of scenario titles
     $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` NOT LIKE '0-%' AND `post_status` = 'publish' AND `post_type` = 'scenario'";
-    $tasks = $wpdb->get_results($sql);
+    $task_objs = $wpdb->get_results($sql);
+    $tasks = [];
+    foreach($task_objs as $task_obj) {
+      $task_name = $task_obj->post_title;
+      $task_num = substr($task_name,0,strpos($task_name,'-'));
+      $tasks[$task_num] = $task_name;
+    }
+    // get array of responses
+    $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` LIKE '%sub%' AND `post_status` = 'publish' AND `post_type` = 'response'";
+    $total_responses = $wpdb->get_results($sql);
 
-    // iterate over each task-competency pair, counting the number of responses, coded responses, and reviewed responses for each
+    // find each task-competency pair
+    $ct_pairs = [];
+    foreach($total_responses as $resp_obj) {
+      $resp_str = $resp_obj->post_title;
+      $comp_num = substr($resp_str,1,strpos($resp_str,'-')-1);
+      $ct_pair = substr($resp_str,0,strpos($resp_str,'-',4));
+      if(!is_array($ct_pairs[$comp_num]) || !in_array($ct_pair, $ct_pairs[$comp_num])) {
+        $ct_pairs[$comp_num][] = $ct_pair;
+      }
+    }
+
+    // iterate over competencies
     foreach($competencies as $comp_obj) {
-      // get the actual competency name and number
+      // get competency name and number
       $comp_str = $comp_obj->post_title;
-      $ind = strpos($comp_str,'-Overall');
-      $comp_name = substr($comp_str,0,$ind);
-      $comp_num = substr($comp_name,0,strpos($comp_name,'-'));
-      // print the competency name on its own line
-      echo "<h3>Competency {$comp_name}</h3>" . PHP_EOL;
+      $comp_name = substr($comp_str,0,strpos($comp_str,'-Overall'));
+      $comp_num = substr($comp_str,0,strpos($comp_str,'-'));
 
-      foreach($tasks as $task_obj) {
-        // get the task name and number
-        $task_name = $task_obj->post_title;
-        $task_num = substr($task_name,0,strpos($task_name,'-'));
+      // print competency name
+      echo "<h3>Competency {$comp_name}</h3>";
+      
+      // iterate over ct_pairs
+      foreach($ct_pairs[$comp_num] as $ct_pair) {
+        // print scenario name
+        $ind = strpos($ct_pair,'t')+1;
+        $task_num = substr($ct_pair,$ind,strlen($ct_pair)-$ind);
+        echo "<b>Scenario {$tasks[$task_num]}</b><br />";
 
-        // look for responses with this task and competency pair
-        $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` LIKE 'c{$comp_num}-t{$task_num}-%' AND `post_status` = 'publish' AND `post_type` = 'response'";
+        // get total number of responses
+        $sql = "SELECT DISTINCT `post_title` FROM `{$posts_table}` WHERE `post_title` LIKE '{$ct_pair}-%' AND `post_status` = 'publish' AND `post_type` = 'response'";
         $total_responses = count($wpdb->get_results($sql));
+        // get total number of coded responses
+        $sql = "SELECT DISTINCT `resp_title` FROM `{$judgments_table}` WHERE `resp_title` LIKE 'c{$comp_num}-t{$task_num}-%'";
+        $num_coded_responses = count($wpdb->get_results($sql));
+        // get total number of reviewed responses
+        $sql .= " AND `judg_type` = 'rev'";
+        $num_reviewed_responses = count($wpdb->get_results($sql));
 
-        // if there are responses, print the scenario name, find the appropriate counts, and remove the scenario from the array
-        if($total_responses > 0) {
-          // print scenario name on its own line
-          echo "<b>Scenario {$task_name}</b><br />" . PHP_EOL;
-          
-          // get counts
-          $sql = "SELECT DISTINCT `resp_title` FROM `{$judgments_table}` WHERE `resp_title` LIKE 'c{$comp_num}-t{$task_num}-%'";
-          $num_coded_responses = count($wpdb->get_results($sql));
-          $sql .= " AND `judg_type` = 'rev'";
-          $num_reviewed_responses = count($wpdb->get_results($sql));
-
-          // print counts
-          echo "{$total_responses} responses to code.<br />" . PHP_EOL;
-          echo "{$num_coded_responses} coded responses.<br />" . PHP_EOL;
-          echo "{$num_reviewed_responses} reviewed responses.<br /><br />" . PHP_EOL;
-
-          // task 9 is in both competency 1 and 2, so it can't be removed the first time
-          if($task_num != "9" || $comp_num > 1) {
-            unset($tasks[array_search($task_obj,$tasks)]);
-          }
-        }
+        // print counts
+        echo "{$total_responses} responses to code.<br />" . PHP_EOL;
+        echo "{$num_coded_responses} coded responses.<br />" . PHP_EOL;
+        echo "{$num_reviewed_responses} reviewed responses.<br /><br />" . PHP_EOL;
       }
     }
   }
